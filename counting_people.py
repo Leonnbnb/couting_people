@@ -160,16 +160,6 @@ def get_faces_distances(refined_bboxes, faces, n):
   
   #caso tenha medir a diferença de um ponto a sua escolha
 
-def find(face, zero, n, distancia, c1, nao_foi, stop=5):
-  for f in face[:stop]:
-    if(f!=zero):
-      if(distance.euclidean(c1, f)<distancia):
-          if(c1!=f):
-              if(len(face)<(n+1)):
-                face.append(c1)
-                nao_foi = False            
-              break
-  return nao_foi
 
 def draw_distance_labels_counter(faces, raw_image):
   zero = (0.0 , 0.0)
@@ -394,8 +384,8 @@ def main():
 
   argparse = ArgumentParser()
   argparse.add_argument('--weight_file_path', type=str, help='Pretrained weight file.', default="/path/to/mat2tf.pkl")
-  argparse.add_argument('--video_dir', type=str, help='Video path.', default="/path/to/video")
-  argparse.add_argument('--video_output_dir', type=str, help='Output Video path with faces detected.', default="/path/to/video_output")
+  argparse.add_argument('--videos_dir', type=str, help='Video path.', default="/path/to/video")
+  argparse.add_argument('--videos_output_dir', type=str, help='Output Video path with faces detected.', default="/path/to/video_output")
   argparse.add_argument('--prob_thresh', type=float, help='The threshold of detection confidence(default: 0.5).', default=0.5)
   argparse.add_argument('--nms_thresh', type=float, help='The overlap threshold of non maximum suppression(default: 0.1).', default=0.1)
   argparse.add_argument('--line_width', type=int, help='Line width of bounding boxes(0: auto).', default=3)
@@ -406,13 +396,13 @@ def main():
 
   # check arguments
   assert os.path.exists(args.weight_file_path), "weight file: " + args.weight_file_path + " not found."
-  assert os.path.exists(args.video_dir), "data directory: " + args.video_dir + " not found."
+  assert os.path.exists(args.videos_dir), "data directory: " + args.video_dir + " not found."
 
   assert args.line_width >= 0, "line_width should be >= 0."
 
   with tf.Graph().as_default():
     evaluate(
-      weight_file_path=args.weight_file_path, data_dir=args.video_dir, output_dir=args.video_output_dir,
+      weight_file_path=args.weight_file_path, data_dir=args.videos_dir, output_dir=args.videos_output_dir,
       prob_thresh=args.prob_thresh, nms_thresh=args.nms_thresh,
       lw=args.line_width, display=args.display, fps=args.fps)
 
