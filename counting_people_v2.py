@@ -86,8 +86,6 @@ def overlay_bounding_boxes(raw_img, refined_bboxes, lw):
   
   for r in refined_bboxes:
     _score = expit(r[4])
-    cm_idx = int(np.ceil(_score * 255))
-    rect_color = [int(np.ceil(x * 255)) for x in util.cm_data[cm_idx]]  # parula
     _lw = lw
     if lw == 0:  # line width of each bounding box is adaptively determined.
       bw, bh = r[2] - r[0] + 1, r[3] - r[0] + 1
@@ -103,79 +101,60 @@ def overlay_bounding_boxes(raw_img, refined_bboxes, lw):
     #cv2.imwrite(name, face)
     cv2.rectangle(raw_img, (_r[0], _r[1]), (_r[2], _r[3]), (255, 255, 0), int(_lw/2))
  
-def get_faces_distances(refined_bboxes, faces, n):
+def get_faces_distances(refined_bboxes, faces, n_frame, intermediate_layer_model):
   #euma matriz de faces. cada coluna é um frame, salva as faces proximas
   #if refined_bboxes_anterior equals []  não faça nada 
   #vetor com faces achadas - cada coluna 
   distancia = 15.0  #limita espaço de procura
   zero = (0.0 , 0.0)
-  nao_foi = True
+  nao_encontrado = True
+  width_min = 10
+  height_min = 10
+  
 
+  for row in refined_bboxes: #para cada face
+    _row = [int(x) for x in row[:4]] 
+    c1 = ((_row[0] + _row[2])/2), ((_row[1] + _row[3])/2) #calcula o centroid da face
+    width_min = int(_row[3])-int(_row[1])
+    height_min = int(_row[2])-int(_row[0])
 
-  for row in refined_bboxes:
-    _row = [int(x) for x in row[:4]]
-    c1 = ((_row[0] + _row[2])/2), ((_row[1] + _row[3])/2)
-    if(n==0):
+    b = lambda x: 10 if x > 10 else x+1 #define o número de frames onde procurar
+
+    if(n_frame==0): 
       faces.append([c1])      
     else:
-      for face in faces:  
-        if(face[n-1]!=zero):
-          if(distance.euclidean(c1, face[n-1])<distancia):
-            if(len(face)<(n+1)):
-              face.append(c1)
-              nao_foi = False
-            break
-        elif(face[n-2]!=zero):
-          if(distance.euclidean(c1, face[n-2])<distancia):
-            if(len(face)<(n+1)):
-              face.append(c1)
-              nao_foi = False
-            break
-        elif(face[n-3]!=zero):
-          if(distance.euclidean(c1, face[n-3])<distancia):
-            if(len(face)<(n+1)):
-              face.append(c1)
-              nao_foi = False
-            break
-        elif(face[n-4]!=zero):
-          if(distance.euclidean(c1, face[n-4])<distancia):
-            if(len(face)<(n+1)):
-              face.append(c1)
-              nao_foi = False
-            break
-        elif(face[n-5]!=zero):
-          if(distance.euclidean(c1, face[n-5])<distancia):
-            if(len(face)<(n+1)):
-              face.append(c1)
-              nao_foi = False
-            break
-      if(nao_foi):
+      for face in faces:
+        for x in  range(1, b(n_frame), 1):
+          nao_encontrado = finding(face, n_frame, distancia, c1, nao_encontrado, x)
+          if(nao_encontrado is False):
+            break  
+
+      if(nao_encontrado):
         nova_face = []
-        for x in range(0, n-1):
+        for x in range(0, n_frame-1):
           nova_face.append(zero)
         nova_face.append(c1)
-        nao_foi=True
+        nao_encontrado=True
         faces.append(nova_face)
        
       
   for face in faces:
-    if(len(face)<(n+1)):
+    if(len(face)<(n_frame+1)):
       face.append(zero)
 
   
   #caso tenha medir a diferença de um ponto a sua escolha
-
+def draw_lables(n, face, raw_image, labels):
+  if(face[-n:][0]!=(0.0 , 0.0)):
+      ponto = face[-n:][0]
+      cv2.putText(raw_image, str(labels), (int(ponto[0]), int(ponto[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
 
 def draw_distance_labels_counter(faces, raw_image):
   zero = (0.0 , 0.0)
   labels = 0
   for face in faces:
-    if(face[-1:][0]!=zero):
-      ponto = face[-1:][0]
-      cv2.putText(raw_image, str(labels), (int(ponto[0]), int(ponto[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-    elif(face[-2:][0]!=zero):
-      ponto = face[-2:][0]
-      cv2.putText(raw_image, str(labels), (int(ponto[0]), int(ponto[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+    for i in range(5):
+      draw_lables(i, face, raw_image, labels)
     frames = face[-12:] #utilize 12 últimos frames  
     cont = 1
     tam = len(frames)
@@ -187,6 +166,13 @@ def draw_distance_labels_counter(faces, raw_image):
       cont = cont + 1
     labels = labels + 1
 
+def finding(face, n_frame, distancia, centroid, nao_encotrado, step):
+	if(face[n_frame-step]!=(0.0 , 0.0)):
+		if(distance.euclidean(centroid, face[n_frame-step])<distancia):
+			if(len(face)<(n_frame+1)):
+				face.append(centroid)
+				nao_encotrado = False            
+	return nao_encotrado
 
 def evaluate(weight_file_path, data_dir, output_dir, fps, prob_thresh=0.5, nms_thresh=0.1, lw=3, display=True):
   """Detect faces in images.
@@ -238,7 +224,7 @@ def evaluate(weight_file_path, data_dir, output_dir, fps, prob_thresh=0.5, nms_t
     video_out_name = os.path.join(output_dir, video_out_name)
     print(video_out_name)
 
-    
+    start_video = time.time()
     #Load the video 
     video = cv2.VideoCapture(video)
 
@@ -254,6 +240,7 @@ def evaluate(weight_file_path, data_dir, output_dir, fps, prob_thresh=0.5, nms_t
     # Define the codec and create VideoWriter object.The output is stored in 'output.avi' file.
     video_out = cv2.VideoWriter(video_out_name, cv2.VideoWriter_fourcc(*'XVID'), fps , (frame_width,frame_height))
 
+    
     # Load an average image and clusters(reference boxes of templates).
     with open(weight_file_path, "rb") as f:
       _, mat_params_dict = pickle.load(f)
@@ -274,6 +261,8 @@ def evaluate(weight_file_path, data_dir, output_dir, fps, prob_thresh=0.5, nms_t
           raw_img = frame
           raw_img = cv2.cvtColor(raw_img, cv2.COLOR_BGR2RGB)
           raw_img_f = raw_img.astype(np.float32)
+          start = time.time()
+
           
           def _calc_scales():
             raw_h, raw_w = raw_img.shape[0], raw_img.shape[1]
@@ -287,8 +276,9 @@ def evaluate(weight_file_path, data_dir, output_dir, fps, prob_thresh=0.5, nms_t
             return scales
 
           scales = _calc_scales()
-          start = time.time()
-
+          
+          
+          
           # initialize output
           bboxes = np.empty(shape=(0, 5))
 
@@ -361,28 +351,25 @@ def evaluate(weight_file_path, data_dir, output_dir, fps, prob_thresh=0.5, nms_t
           #dois pontos a distância entre esses pontos foi a movimentação da pessoa 
           something = get_distance_points(refined_bboxes, refined_bboxes_anterior) 
           
-
-          get_faces_distances(refined_bboxes, faces, n_frame)
+          get_faces_distances(refined_bboxes, faces, n_frame, intermediate_layer_model)
           
           draw_distance_labels_counter(faces, raw_img)
           #junta as distância com um vetor de todas as distâncias já cálculadas
           #distancias.append(something)
 
-          
-          
           #desenha a distancia entre as faces
           #a partir dos centroids das faces encotradas anteriormente
-          #draw_distance(raw_img, distancias)
-
-          
+          #draw_distance(raw_img, distancias) 
 
           #o frame atual se torna o anterior
           refined_bboxes_anterior = refined_bboxes
           
           # save image with bounding boxes
+          
           raw_img = cv2.cvtColor(raw_img, cv2.COLOR_RGB2BGR)
           video_out.write(raw_img)
           n_frame = n_frame + 1
+          print("contado: ", len(faces))
 
           try:
             print("time {:.2f} secs for {}_{}".format(time.time() - start, 'frame', n_frame))
@@ -397,7 +384,8 @@ def evaluate(weight_file_path, data_dir, output_dir, fps, prob_thresh=0.5, nms_t
     video.release()
     video_out.release()
 
-    output_file.write(video_out_name+" "+ "Esperado: "+" "+"Contado: "+str(len(faces)))
+
+    output_file.write(video_out_name+" "+ "Esperado: "+" "+"Contado: "+str(len(faces))+ " time {:.2f} secs \n".format(time.time() - start_video))
 
   output_file.close()
   
@@ -411,7 +399,7 @@ def main():
   argparse.add_argument('--nms_thresh', type=float, help='The overlap threshold of non maximum suppression(default: 0.1).', default=0.1)
   argparse.add_argument('--line_width', type=int, help='Line width of bounding boxes(0: auto).', default=3)
   argparse.add_argument('--display', type=bool, help='Display each image on window.', default=True)
-  argparse.add_argument('--fps', type=int, help='Frames por segundo', default=30)
+  argparse.add_argument('--fps', type=int, help='Frames por segundo', default=10)
 
   args = argparse.parse_args()
 
