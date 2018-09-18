@@ -120,7 +120,7 @@ def overlay_bounding_boxes(raw_img, refined_bboxes, lw):
 
     cv2.rectangle(raw_img, (_r[0]-med_width, _r[1]-med_height), (_r[2]+med_width+mod_width, _r[3]+med_height+mod_height), (255, 255, 0), int(_lw/2))
  
-def get_faces_distances(refined_bboxes, faces, n_frame, intermediate_layer_model):
+def get_faces_distances(refined_bboxes, faces, n_frame, intermediate_layer_model, faces_features, raw_img):
   #euma matriz de faces. cada coluna é um frame, salva as faces proximas
   #if refined_bboxes_anterior equals []  não faça nada 
   #vetor com faces achadas - cada coluna 
@@ -129,23 +129,55 @@ def get_faces_distances(refined_bboxes, faces, n_frame, intermediate_layer_model
   nao_encontrado = True
   width_min = 10
   height_min = 10
-  
+  width_max = 32
+  height_max = 32
+  frame_width = 352
+  frame_height = 240
 
   for row in refined_bboxes: #para cada face
     _row = [int(x) for x in row[:4]] 
     c1 = ((_row[0] + _row[2])/2), ((_row[1] + _row[3])/2) #calcula o centroid da face
-    width_face = int(_row[3])-int(_row[1])
-    height_face = int(_row[2])-int(_row[0])
+    height_face = int(_row[3])-int(_row[1])
+    width_face = int(_row[2])-int(_row[0])
+
+    dif_height = height_max - height_face
+    dif_width = width_max - width_face
+
+    med_height = int(dif_height/2)
+    med_width =  int(dif_width/2)
+
+    mod_height = dif_height % 2
+    mod_width =  dif_width % 2
+
+    mod_height = mod_height*(-1) if dif_height < 0 else mod_height
+    mod_width = mod_width*(-1) if dif_width < 0 else mod_width
 
     if((width_face<width_min) or (height_face<height_min)):
       continue
 
+    print((_row[0], _row[1]), (_row[2], _row[3]))
+    #0 -> x1, 1 -> y1 , 2 -> x2, 3 -> y2
+    dif_y = lambda y1, y2: y1-(y2-240) if y2 > 240 else y1
+    dif_x = lambda x1, x2: x1-(x2-352) if x2 > 352 else x1  
+    x1 = _row[0]-med_width
+    y1 = _row[1]-med_height
+    x2 = _row[2]+med_width+mod_width
+    y2 = _row[3]+med_height+mod_height
+
+    y1 = dif_y(y1, y2)
+    x1 = dif_x(x1, x2)
     
-    
+    print(dif_height, dif_width, med_height, med_width, mod_height, mod_width)
+    print((x1, y1), (x2, y2))
+    face = raw_img[y1:y2, x1:x2]
+    face = cv2.cvtColor(face, cv2.COLOR_RGB2BGR)
+    features = get_features(face, intermediate_layer_model)
+
     b = lambda x: 9 if x > 9 else x+1 #define o número de frames onde procurar
 
     if(n_frame==0): 
-      faces.append([c1])      
+      faces.append([c1])
+      faces_features(features)      
     else:
       for face in faces:
         for x in  range(1, b(n_frame), 1):
@@ -153,6 +185,8 @@ def get_faces_distances(refined_bboxes, faces, n_frame, intermediate_layer_model
           if(nao_encontrado is False):
             break  
 
+      
+      
       if(nao_encontrado):
         nova_face = []
         for x in range(0, n_frame-1):
@@ -168,6 +202,8 @@ def get_faces_distances(refined_bboxes, faces, n_frame, intermediate_layer_model
 
   
   #caso tenha medir a diferença de um ponto a sua escolha
+
+
 def draw_lables(n, face, raw_image, labels):
   if(face[-n:][0]!=(0.0 , 0.0)):
       ponto = face[-n:][0]
@@ -259,6 +295,7 @@ def evaluate(weight_file_path, data_dir, output_dir, fps, prob_thresh=0.4, nms_t
     distancias = []
     refined_bboxes_anterior = []
     faces = []
+    faces_features = []
 
     #write video 
     frame_width = 352
@@ -378,7 +415,7 @@ def evaluate(weight_file_path, data_dir, output_dir, fps, prob_thresh=0.4, nms_t
           #dois pontos a distância entre esses pontos foi a movimentação da pessoa 
           something = get_distance_points(refined_bboxes, refined_bboxes_anterior) 
           
-          get_faces_distances(refined_bboxes, faces, n_frame, intermediate_layer_model)
+          get_faces_distances(refined_bboxes, faces, n_frame, intermediate_layer_model, faces_features, raw_img)
           
           draw_distance_labels_counter(faces, raw_img)
           #junta as distância com um vetor de todas as distâncias já cálculadas
