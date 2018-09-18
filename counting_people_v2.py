@@ -84,6 +84,13 @@ def overlay_bounding_boxes(raw_img, refined_bboxes, lw):
   """
   # Overlay bounding boxes on an image with the color based on the confidence.
   
+  width_min = 10
+  height_min = 10
+
+  width_max = 32
+  height_max = 32
+
+
   for r in refined_bboxes:
     _score = expit(r[4])
     _lw = lw
@@ -95,11 +102,23 @@ def overlay_bounding_boxes(raw_img, refined_bboxes, lw):
     #0 -> x1, 1 -> y1 , 2 -> x2, 3 -> y2
     # x - horizontal e y - vertical
     #face = raw_img[int(r[1]):int(_r[3]), int(_r[0]):int(_r[2])]
-    
-    #name = 'A:\\TCC\\Tiny_Faces_in_Tensorflow\\v3\\faces2\\face'+str(num)+'_'+str(cont)+'.jpg'
-    #face = cv2.cvtColor(face, cv2.COLOR_RGB2BGR)
-    #cv2.imwrite(name, face)
-    cv2.rectangle(raw_img, (_r[0], _r[1]), (_r[2], _r[3]), (255, 255, 0), int(_lw/2))
+    width_face = int(_r[3])-int(_r[1])
+    height_face = int(_r[2])-int(_r[0])
+
+    dif_height = height_max - height_face
+    dif_width = width_max - width_face
+
+    med_height = int(dif_height/2)
+    med_width =  int(dif_width/2)
+
+    mod_height = dif_height % 2
+    mod_width =  dif_width % 2
+
+
+    if((width_face<width_min) or (height_face<height_min)):
+      continue
+
+    cv2.rectangle(raw_img, (_r[0]-med_width, _r[1]-med_height), (_r[2]+med_width+mod_width, _r[3]+med_height+mod_height), (255, 255, 0), int(_lw/2))
  
 def get_faces_distances(refined_bboxes, faces, n_frame, intermediate_layer_model):
   #euma matriz de faces. cada coluna é um frame, salva as faces proximas
@@ -115,10 +134,15 @@ def get_faces_distances(refined_bboxes, faces, n_frame, intermediate_layer_model
   for row in refined_bboxes: #para cada face
     _row = [int(x) for x in row[:4]] 
     c1 = ((_row[0] + _row[2])/2), ((_row[1] + _row[3])/2) #calcula o centroid da face
-    width_min = int(_row[3])-int(_row[1])
-    height_min = int(_row[2])-int(_row[0])
+    width_face = int(_row[3])-int(_row[1])
+    height_face = int(_row[2])-int(_row[0])
 
-    b = lambda x: 10 if x > 10 else x+1 #define o número de frames onde procurar
+    if((width_face<width_min) or (height_face<height_min)):
+      continue
+
+    
+    
+    b = lambda x: 9 if x > 9 else x+1 #define o número de frames onde procurar
 
     if(n_frame==0): 
       faces.append([c1])      
@@ -148,13 +172,15 @@ def draw_lables(n, face, raw_image, labels):
   if(face[-n:][0]!=(0.0 , 0.0)):
       ponto = face[-n:][0]
       cv2.putText(raw_image, str(labels), (int(ponto[0]), int(ponto[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+      return True
 
 def draw_distance_labels_counter(faces, raw_image):
   zero = (0.0 , 0.0)
   labels = 0
   for face in faces:
-    for i in range(5):
-      draw_lables(i, face, raw_image, labels)
+    for i in range(1, 6, 1 ):
+      if(draw_lables(i, face, raw_image, labels)):
+        break
     frames = face[-12:] #utilize 12 últimos frames  
     cont = 1
     tam = len(frames)
@@ -174,7 +200,7 @@ def finding(face, n_frame, distancia, centroid, nao_encotrado, step):
 				nao_encotrado = False            
 	return nao_encotrado
 
-def evaluate(weight_file_path, data_dir, output_dir, fps, prob_thresh=0.5, nms_thresh=0.1, lw=3, display=True):
+def evaluate(weight_file_path, data_dir, output_dir, fps, prob_thresh=0.4, nms_thresh=0.1, lw=3, display=True):
   """Detect faces in images.
   Args:
     prob_thresh:
@@ -202,9 +228,10 @@ def evaluate(weight_file_path, data_dir, output_dir, fps, prob_thresh=0.5, nms_t
   # Create the tiny face model which weights are loaded from a pretrained model.
   model = tiny_face_model.Model(weight_file_path)
   score_final = model.tiny_face(x)
+  
 
   
-  saved_model = os.path.normpath('networks\\cifar100.h5')
+  saved_model = os.path.normpath(os.path.join('networks', 'cifar100.h5' ))
   model_vgg = load_model(saved_model)
 
   my_layer = 'dense_15'
@@ -221,7 +248,7 @@ def evaluate(weight_file_path, data_dir, output_dir, fps, prob_thresh=0.5, nms_t
   
   for video in filenames:
     video_out_name = os.path.basename(video).replace('gif', 'avi', 1)
-    video_out_name = os.path.join(output_dir, video_out_name)
+    video_out_name = os.path.join(output_dir, ('out_'+video_out_name))
     print(video_out_name)
 
     start_video = time.time()
@@ -392,10 +419,10 @@ def evaluate(weight_file_path, data_dir, output_dir, fps, prob_thresh=0.5, nms_t
 def main():
 
   argparse = ArgumentParser()
-  argparse.add_argument('--weight_file_path', type=str, help='Pretrained weight file.', default="networks\\mat2tf.pkl")
+  argparse.add_argument('--weight_file_path', type=str, help='Pretrained weight file.', default=os.path.join('networks', 'mat2tf.pkl'))
   argparse.add_argument('--videos_dir', type=str, help='Video path.', default="data_set")
   argparse.add_argument('--videos_output_dir', type=str, help='Output Video path with faces detected.', default="output")
-  argparse.add_argument('--prob_thresh', type=float, help='The threshold of detection confidence(default: 0.5).', default=0.5)
+  argparse.add_argument('--prob_thresh', type=float, help='The threshold of detection confidence(default: 0.5).', default=0.4)
   argparse.add_argument('--nms_thresh', type=float, help='The overlap threshold of non maximum suppression(default: 0.1).', default=0.1)
   argparse.add_argument('--line_width', type=int, help='Line width of bounding boxes(0: auto).', default=3)
   argparse.add_argument('--display', type=bool, help='Display each image on window.', default=True)
