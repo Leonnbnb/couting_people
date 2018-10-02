@@ -1,5 +1,5 @@
-import tensorflow as tf
-import tiny_face_model_gpu
+
+import tiny_face_model_cpu
 import cv2
 import util
 import glob
@@ -11,12 +11,13 @@ import traceback
 import pylab as pl
 import time
 import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 import os.path
 import sys
+import tensorflow as tf
 import pickle
 import pandas as pd
 import h5py
-import gc
 
 from argparse import ArgumentParser
 from keras.models import load_model
@@ -171,19 +172,32 @@ def get_faces_distances(refined_bboxes, faces, n_frame, intermediate_layer_model
     face = raw_img[y1:y2, x1:x2]
     face = cv2.cvtColor(face, cv2.COLOR_RGB2BGR)
     features = get_features(face, intermediate_layer_model)
+    print(features)
+    input(...)
 
-    b = lambda x: 9 if x > 9 else x+1 #define o número de frames onde procurar
+    b = lambda x: 16 if x > 16 else x+1 #define o número de frames onde procurar
+
+    sim = 10
+    idxSim = 0
 
     if(n_frame==0): 
       faces.append([c1])
       faces_features.append(features)      
     else:
       for face in faces:
-        
-        for x in  range(1, b(n_frame), 1):
-          nao_encontrado = finding(face, n_frame, distancia, c1, nao_encontrado, x)
-          if(nao_encontrado is False):
-            break  
+        idx = faces.index(face)
+        print(idx)
+        input(...)
+        sim_atual = distance.cosine(features[0], faces_features[idx][0])
+        if(sim_atual < sim):
+          sim = sim_atual
+          idxSim = idx
+      faces_features[idxSim]=features
+
+      for x in  range(1, b(n_frame), 1):
+        nao_encontrado = finding(faces[idxSim], n_frame, distancia, c1, nao_encontrado, x)
+        if(nao_encontrado is False):
+          break  
       if(nao_encontrado):
         nova_face = []
         for x in range(0, n_frame-1):
@@ -191,6 +205,8 @@ def get_faces_distances(refined_bboxes, faces, n_frame, intermediate_layer_model
         nova_face.append(c1)
         nao_encontrado=True
         faces.append(nova_face)
+        faces_features.append(features)
+       
       
   for face in faces:
     if(len(face)<(n_frame+1)):
@@ -254,40 +270,39 @@ def evaluate(weight_file_path, data_dir, output_dir, fps, prob_thresh=0.4, nms_t
   Returns:
     None.
   """
-  x = tf.placeholder(tf.float32, [1, None, None, 3]) # n, h, w, c
-
-  # Create the tiny face model which weights are loaded from a pretrained model.
-  model = tiny_face_model_gpu.Model(weight_file_path)
-  score_final = model.tiny_face(x)
-  
-  
-  saved_model = os.path.normpath(os.path.join('networks', 'cifar100.h5' ))
-  model_vgg = load_model(saved_model)
-
-  my_layer = 'dense_15'
-
-  intermediate_layer_model = Model(inputs=model_vgg.input,
-                                  outputs=model_vgg.get_layer(my_layer).output)
-
-  # Find image files in data_dir.
+  # placeholder of input images. Currently batch size of one is supported.
+      # Find image files in data_dir.
   filenames = []
   for ext in ('*.avi', '*.gif', '*.mp4', '*.wmv'):
     filenames.extend(glob.glob(os.path.join(data_dir, ext)))
 
   filenames.sort()
   
-  for video in filenames[25:37]:
+  for video in filenames:
 
-    # placeholder of input images. Currently batch size of one is supported.
+    x = tf.placeholder(tf.float32, [1, None, None, 3]) # n, h, w, c
+
+    # Create the tiny face model which weights are loaded from a pretrained model.
+    model = tiny_face_model_cpu.Model(weight_file_path)
+    score_final = model.tiny_face(x)
     
+    
+    saved_model = os.path.normpath(os.path.join('networks', 'cifar100.h5' ))
+    model_vgg = load_model(saved_model)
+
+    my_layer = 'dense_15'
+
+    intermediate_layer_model = Model(inputs=model_vgg.input,
+                                  outputs=model_vgg.get_layer(my_layer).output)
+
+
+
     video_out_name = os.path.basename(video).replace('gif', 'avi', 1)
     video_out_name = os.path.join(output_dir, ('out_'+video_out_name))
     print(video_out_name)
 
-    output_file = open("output_file_v2.txt", "a")
+    output_file = open("output_file_v3.txt", "a")
     start_video = time.time()
-
-    
     #Load the video 
     video = cv2.VideoCapture(video)
 
@@ -326,6 +341,7 @@ def evaluate(weight_file_path, data_dir, output_dir, fps, prob_thresh=0.4, nms_t
           raw_img = cv2.cvtColor(raw_img, cv2.COLOR_BGR2RGB)
           raw_img_f = raw_img.astype(np.float32)
           start = time.time()
+
           
           def _calc_scales():
             raw_h, raw_w = raw_img.shape[0], raw_img.shape[1]
@@ -340,6 +356,7 @@ def evaluate(weight_file_path, data_dir, output_dir, fps, prob_thresh=0.4, nms_t
 
           scales = _calc_scales()
           
+        
           # initialize output
           bboxes = np.empty(shape=(0, 5))
 
@@ -405,7 +422,8 @@ def evaluate(weight_file_path, data_dir, output_dir, fps, prob_thresh=0.4, nms_t
           refind_idx = sess.run(refind_idx)
           refined_bboxes = bboxes[refind_idx]
           overlay_bounding_boxes(raw_img, refined_bboxes, lw)
-          
+
+
           #calcula a distância entre faces no frame atual e o frame anterior
           #retorna uma matriz com duas colunas - o centroid 1 e o centroid 2
           #dois pontos a distância entre esses pontos foi a movimentação da pessoa 
@@ -429,15 +447,12 @@ def evaluate(weight_file_path, data_dir, output_dir, fps, prob_thresh=0.4, nms_t
           raw_img = cv2.cvtColor(raw_img, cv2.COLOR_RGB2BGR)
           video_out.write(raw_img)
           n_frame = n_frame + 1
-          gc.collect()
           print("contado: ", len(faces))
 
           try:
-            print("time {:.2f} secs for {}_{}".format(time.time() - start, 'frame', n_frame))
+            print("time {:.2f} secs for {}_{} {}".format(time.time() - start, 'frame', n_frame, video_out_name ))
           except Exception:
             traceback.print_exc()
-
-           
 
       except Exception:
         video.release()
@@ -446,7 +461,6 @@ def evaluate(weight_file_path, data_dir, output_dir, fps, prob_thresh=0.4, nms_t
 
     video.release()
     video_out.release()
-   
 
 
     output_file.write(video_out_name+" "+ "Esperado: "+" "+"Contado: "+str(len(faces))+ " time {:.2f} secs \n".format(time.time() - start_video))
@@ -459,8 +473,8 @@ def main():
 
   argparse = ArgumentParser()
   argparse.add_argument('--weight_file_path', type=str, help='Pretrained weight file.', default=os.path.join('networks', 'mat2tf.pkl'))
-  argparse.add_argument('--videos_dir', type=str, help='Video path.', default="data_set")
-  argparse.add_argument('--videos_output_dir', type=str, help='Output Video path with faces detected.', default="output")
+  argparse.add_argument('--videos_dir', type=str, help='Video path.', default="temp")
+  argparse.add_argument('--videos_output_dir', type=str, help='Output Video path with faces detected.', default="temp_output")
   argparse.add_argument('--prob_thresh', type=float, help='The threshold of detection confidence(default: 0.5).', default=0.4)
   argparse.add_argument('--nms_thresh', type=float, help='The overlap threshold of non maximum suppression(default: 0.1).', default=0.1)
   argparse.add_argument('--line_width', type=int, help='Line width of bounding boxes(0: auto).', default=3)
