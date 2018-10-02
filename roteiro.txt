@@ -1,0 +1,28 @@
+
+Introdução:
+O Problema da baixa resolução
+Utilização de cameras para a vigilancia, automatização, possibilidades, contagem e outros.
+Referencial Teorico:
+	
+	Contagem de pessoas
+		Tipos de mapa de calor, rede neural.
+	Contagem de pessoas em videos
+	Detecção de faces em baixa resolução.	
+	Traking.
+Metodologia:assx r
+	Descrever metodologia 
+		Passo 1:
+		Passo 2:
+		Passo 3:
+	Figuras.
+Base de Dados:
+	Descrição da base:
+	Descrição da montagem da base:
+		Passo 1: - Retirada dos vídeos
+		Passo 2: - Extração dos clips (corte dos vídeos)
+		Passo 3: - Contagem da pessoas.
+	Figura resumindo
+Experimentos:
+	Descrição dos parametros
+	
+	
